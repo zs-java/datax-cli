@@ -7,7 +7,6 @@ const (
 )
 
 func JsonMerge(target map[string]interface{}, sources ...map[string]interface{}) map[string]interface{} {
-	// return jsMerge(dst, src, 0)
 	if len(sources) == 0 {
 		return target
 	}

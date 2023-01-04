@@ -1,0 +1,34 @@
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+######################################################################
+# Others
+logs
+*.log
+**/*.log
+*.swp
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+######################################################################
+# Project
+datax-cli
+dist
+bin
+local
