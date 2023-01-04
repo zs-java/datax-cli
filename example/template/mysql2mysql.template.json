@@ -1,0 +1,39 @@
+{
+  "job": {
+    "setting": {
+      "speed": {
+        "channel": 1
+      }
+    },
+    "content": [
+      {
+        "reader": {
+          "name": "mysqlreader",
+          "parameter": {
+            "username": "${reader_rdbms_username}",
+            "password": "${reader_rdbms_password}",
+            "connection": [
+              {
+                "jdbcUrl": [
+                  "${reader_rdbms_url}"
+                ]
+              }
+            ]
+          }
+        },
+        "writer": {
+          "name": "mysqlwriter",
+          "parameter": {
+            "username": "${writer_rdbms_username}",
+            "password": "${writer_rdbms_password}",
+            "connection": [
+              {
+                "jdbcUrl": "${writer_rdbms_url}"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

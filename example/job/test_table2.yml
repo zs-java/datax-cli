@@ -1,0 +1,22 @@
+job:
+  content:
+    - reader:
+        parameter:
+          connection:
+            - querySql:
+                - select id,
+                         name,
+                         age
+                  from test_table2
+      writer:
+        parameter:
+          connection:
+            - table:
+                - test_table1
+          column:
+            - id
+            - name
+            - age
+          preSql:
+            - truncate table test_table2
+
