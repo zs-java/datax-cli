@@ -1,4 +1,4 @@
-module datax-cli
+module github.com/zs-java/datax-cli
 
 go 1.18
 
