@@ -1,9 +1,9 @@
 package main
 
 import (
-	"datax-cli/libdatax"
 	"fmt"
 	"github.com/urfave/cli/v2"
+	"github.com/zs-java/datax-cli/libdatax"
 	"os"
 )
 
