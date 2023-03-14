@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+var pool *FixedSizeThreadPool
+var timeDir = time.Now().Format("2006-01-02-150405")
+
 var RunCommand = &cli.Command{
 	Name:  "run",
 	Usage: "run datax jobs",
@@ -46,25 +49,33 @@ var RunCommand = &cli.Command{
 			Usage: "datax log level",
 			Value: "info",
 		},
+		&cli.IntFlag{
+			Name:    "thread-size",
+			Usage:   "Thread Pool Size",
+			Value:   1,
+			Aliases: []string{"t"},
+		},
 	},
 	Action: doRunAction,
 }
 
 type RunConfig struct {
-	Jobs      string
-	Env       string
-	Output    string
-	DataxHome string
-	Loglevel  string
+	Jobs       string
+	Env        string
+	Output     string
+	DataxHome  string
+	Loglevel   string
+	ThreadSize int
 }
 
 func ParseRunConfig(ctx *cli.Context) RunConfig {
 	return RunConfig{
-		Jobs:      ctx.String("jobs"),
-		Env:       ctx.String("env"),
-		Output:    ctx.String("output"),
-		DataxHome: ctx.String("datax-home"),
-		Loglevel:  ctx.String("loglevel"),
+		Jobs:       ctx.String("jobs"),
+		Env:        ctx.String("env"),
+		Output:     ctx.String("output"),
+		DataxHome:  ctx.String("datax-home"),
+		Loglevel:   ctx.String("loglevel"),
+		ThreadSize: ctx.Int("thread-size"),
 	}
 }
 
@@ -76,8 +87,13 @@ func doRunAction(ctx *cli.Context) error {
 		return err
 	}
 
+	startTime := time.Now()
+
+	// pool
+	pool = NewFixedSizeThreadPool(config.ThreadSize)
+
 	// logfile
-	logFile, err := getLogfile(config)
+	logFile, err := getLogfile(config, "info.log")
 	if err != nil {
 		return err
 	}
@@ -93,10 +109,13 @@ func doRunAction(ctx *cli.Context) error {
 		return errors.New(fmt.Sprintf("%s is not exists", config.Jobs))
 	}
 	if fi.IsDir() {
-		return runJobs(config, config.Jobs, stdout, stderr)
+		_ = runJobs(config, config.Jobs, stdout, stderr)
 	} else {
-		return runJob(config, config.Jobs, stdout, stderr)
+		_ = runJob(config, config.Jobs, stdout, stderr)
 	}
+	pool.Wait()
+	fmt.Printf("Execution completed, taking %d second.\n", time.Now().Unix()-startTime.Unix())
+	return nil
 }
 
 func runJobs(config RunConfig, inputDir string, stdout, stderr io.Writer) (err error) {
@@ -119,41 +138,61 @@ func runJobs(config RunConfig, inputDir string, stdout, stderr io.Writer) (err e
 }
 
 func runJob(config RunConfig, filepath string, stdout, stderr io.Writer) (err error) {
-	var envMap map[string]string
-	if config.Env != "" {
-		if envMap, err = ReadEnvFile(config.Env); err != nil {
-			return err
-		}
-	}
+	pool.SubmitTask(Task{
+		Name: filepath,
+		Action: func() {
+			fmt.Println("begin ", filepath)
+			var envMap map[string]string
+			if config.Env != "" {
+				if envMap, err = ReadEnvFile(config.Env); err != nil {
+					panic(err)
+				}
+			}
 
-	var jvmOpts string
-	if envMap != nil {
-		for k, v := range envMap {
-			jvmOpts += fmt.Sprintf(" -D%s='%s'", k, v)
-		}
-	}
+			var jvmOpts string
+			if envMap != nil {
+				for k, v := range envMap {
+					jvmOpts += fmt.Sprintf(" -D%s='%s'", k, v)
+				}
+			}
 
-	var args []string
-	if jvmOpts != "" {
-		args = append(args, "-p", jvmOpts)
-	}
-	if config.Loglevel != "" {
-		args = append(args, "--loglevel", config.Loglevel)
-	}
+			var args []string
+			if jvmOpts != "" {
+				args = append(args, "-p", jvmOpts)
+			}
+			if config.Loglevel != "" {
+				args = append(args, "--loglevel", config.Loglevel)
+			}
 
-	command := exec.Command(config.DataxHome+"/bin/datax.py", append(args, filepath)...)
+			command := exec.Command(config.DataxHome+"/bin/datax.py", append(args, filepath)...)
 
-	command.Stdin = os.Stdin
-	command.Stdout = stdout
-	command.Stderr = stderr
+			if config.ThreadSize > 1 {
 
-	_, _ = fmt.Fprintf(stdout, "========= begin job: %s, args: %s\n", filepath, strings.Join(command.Args[1:], " "))
+				file, err := getLogfile(config, filepath+".log")
+				if err != nil {
+					panic(err)
+				}
 
-	err = command.Run()
+				defer func() {
+					_ = file.Close()
+				}()
 
-	_, _ = fmt.Fprintf(stdout, "========= end job: %s\n", filepath)
+				stdout = NewMultipleWriter(file, stdout)
+				stderr = NewMultipleWriter(file, stderr)
+			}
 
-	return err
+			command.Stdin = os.Stdin
+			command.Stdout = stdout
+			command.Stderr = stderr
+
+			_, _ = fmt.Fprintf(stdout, "========= begin job: %s, args: %s\n", filepath, strings.Join(command.Args[1:], " "))
+
+			err = command.Run()
+
+			_, _ = fmt.Fprintf(stdout, "========= end job: %s\n", filepath)
+		},
+	})
+	return nil
 }
 
 func checkDataxHome(config RunConfig) (err error) {
@@ -163,12 +202,28 @@ func checkDataxHome(config RunConfig) (err error) {
 	return err
 }
 
-func getLogfile(config RunConfig) (file *os.File, err error) {
-	logfilePath := path.Join(config.Output, time.Now().Format("2006-01-02-150405")+".log")
-	dir := path.Dir(logfilePath)
-	err = os.MkdirAll(dir, os.ModePerm)
+func getLogDir(config RunConfig) (string, error) {
+	dir := path.Join(config.Output, timeDir)
+	return dir, nil
+}
+
+func getLogfile(config RunConfig, filename string) (file *os.File, err error) {
+	dir, err := getLogDir(config)
 	if err != nil {
-		return file, err
+		return nil, err
 	}
-	return os.Create(logfilePath)
+
+	var filePath string
+	if config.ThreadSize == 1 {
+		filePath = dir + "." + filename
+	} else {
+		filePath = path.Join(dir, filename)
+	}
+
+	baseDir := path.Dir(filePath)
+	err = os.MkdirAll(baseDir, os.ModePerm)
+	if err != nil {
+		return nil, err
+	}
+	return os.Create(filePath)
 }
