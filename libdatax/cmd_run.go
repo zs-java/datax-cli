@@ -39,10 +39,9 @@ var RunCommand = &cli.Command{
 			Aliases: []string{"o"},
 		},
 		&cli.StringFlag{
-			Name:    "datax-home",
-			Usage:   "datax home, default read env DATAX_HOME",
-			Value:   os.Getenv("DATAX_HOME"),
-			Aliases: []string{"d"},
+			Name:  "datax-home",
+			Usage: "datax home, default read env DATAX_HOME",
+			Value: os.Getenv("DATAX_HOME"),
 		},
 		&cli.StringFlag{
 			Name:  "loglevel",
@@ -55,6 +54,12 @@ var RunCommand = &cli.Command{
 			Value:   1,
 			Aliases: []string{"t"},
 		},
+		&cli.BoolFlag{
+			Name:    "daemon",
+			Usage:   "Running As Daemon",
+			Value:   false,
+			Aliases: []string{"d"},
+		},
 	},
 	Action: doRunAction,
 }
@@ -66,6 +71,7 @@ type RunConfig struct {
 	DataxHome  string
 	Loglevel   string
 	ThreadSize int
+	Daemon     bool
 }
 
 func ParseRunConfig(ctx *cli.Context) RunConfig {
@@ -76,11 +82,16 @@ func ParseRunConfig(ctx *cli.Context) RunConfig {
 		DataxHome:  ctx.String("datax-home"),
 		Loglevel:   ctx.String("loglevel"),
 		ThreadSize: ctx.Int("thread-size"),
+		Daemon:     ctx.Bool("daemon"),
 	}
 }
 
 func doRunAction(ctx *cli.Context) error {
 	config := ParseRunConfig(ctx)
+
+	if config.Daemon {
+		return runAsDaemon()
+	}
 
 	err := checkDataxHome(config)
 	if err != nil {
@@ -226,4 +237,19 @@ func getLogfile(config RunConfig, filename string) (file *os.File, err error) {
 		return nil, err
 	}
 	return os.Create(filePath)
+}
+
+func runAsDaemon() error {
+	var newArgs []string
+	for _, arg := range os.Args[1:] {
+		if arg != "-d" && arg != "--daemon" {
+			newArgs = append(newArgs, arg)
+		}
+	}
+	cmd := exec.Command(os.Args[0], newArgs...)
+	if err := cmd.Start(); err != nil {
+		return errors.New(fmt.Sprintf("start %s failed, error: %v\n", os.Args[0], err))
+	}
+	fmt.Printf("%s [PID] %d running...\n", os.Args[0], cmd.Process.Pid)
+	return nil
 }
