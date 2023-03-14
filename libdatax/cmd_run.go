@@ -125,7 +125,7 @@ func doRunAction(ctx *cli.Context) error {
 		_ = runJob(config, config.Jobs, stdout, stderr)
 	}
 	pool.Wait()
-	fmt.Printf("Execution completed, taking %d second.\n", time.Now().Unix()-startTime.Unix())
+	_, _ = fmt.Fprintf(logFile, "Execution completed, taking %d second.\n", time.Now().Unix()-startTime.Unix())
 	return nil
 }
 
